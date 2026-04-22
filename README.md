@@ -1,61 +1,50 @@
-
 # LeWorldModel
-### Stable End-to-End Joint-Embedding Predictive Architecture from Pixels
 
-[Lucas Maes*](https://x.com/lucasmaes_), [Quentin Le Lidec*](https://quentinll.github.io/), [Damien Scieur](https://scholar.google.com/citations?user=hNscQzgAAAAJ&hl=fr), [Yann LeCun](https://yann.lecun.com/) and [Randall Balestriero](https://randallbalestriero.github.io/)
+### 基于像素的稳定端到端联合嵌入预测架构
 
-**Abstract:** Joint Embedding Predictive Architectures (JEPAs) offer a compelling framework for learning world models in compact latent spaces, yet existing methods remain fragile, relying on complex multi-term losses, exponential moving averages, pretrained encoders, or auxiliary supervision to avoid representation collapse. In this work, we introduce LeWorldModel (LeWM), the first JEPA that trains stably end-to-end from raw pixels using only two loss terms: a next-embedding prediction loss and a regularizer enforcing Gaussian-distributed latent embeddings. This reduces tunable loss hyperparameters from six to one compared to the only existing end-to-end alternative. With ~15M parameters trainable on a single GPU in a few hours, LeWM plans up to 48× faster than foundation-model-based world models while remaining competitive across diverse 2D and 3D control tasks. Beyond control, we show that LeWM's latent space encodes meaningful physical structure through probing of physical quantities. Surprise evaluation confirms that the model reliably detects physically implausible events.
+https://github.com/lucas-maes/le-wm
 
-<p align="center">
-   <b>[ <a href="https://arxiv.org/pdf/2603.19312v1">Paper</a> | <a href="https://drive.google.com/drive/folders/1r31os0d4-rR0mdHc7OlY_e5nh3XT4r4e?usp=sharing">Checkpoints</a> | <a href="https://huggingface.co/collections/quentinll/lewm">Data</a> | <a href="https://le-wm.github.io/">Website</a> ]</b>
-</p>
+[Lucas Maes\*](https://x.com/lucasmaes_) 、 [Quentin Le Lidec\*](https://quentinll.github.io/) 、 [Damien Scieur](https://scholar.google.com/citations?user=hNscQzgAAAAJ&hl=fr) 、 [Yann LeCun](https://yann.lecun.com/) 和 [Randall Balestriero](https://randallbalestriero.github.io/)
 
-<br>
+**摘要：** 联合嵌入预测架构（JEPA）为在紧凑的潜在空间中学习世界模型提供了一个引人注目的框架，但现有方法仍然脆弱，依赖于复杂的多项损失函数、指数移动平均、预训练编码器或辅助监督来避免表征崩溃。本文提出了 LeWorldModel（LeWM），这是第一个仅使用两个损失项即可从原始像素稳定地进行端到端训练的 JEPA：一个用于预测下一嵌入的损失函数和一个用于强制潜在嵌入服从高斯分布的正则化项。与目前唯一的端到端替代方案相比，LeWM 将可调损失超参数从六个减少到一个。LeWM 可在单个 GPU 上于数小时内训练约 1500 万个参数，其规划速度比基于基础模型的世界模型快 48 倍，同时在各种 2D 和 3D 控制任务中保持竞争力。除了控制任务之外，我们还证明 LeWM 的潜在空间通过探测物理量编码了有意义的物理结构。意外评估证实，该模型能够可靠地检测出物理上不合理的事件。
 
-<p align="center">
-  <img src="assets/lewm.gif" width="80%">
-</p>
+**\[ [论文](https://arxiv.org/pdf/2603.19312v1) | [检查点](https://drive.google.com/drive/folders/1r31os0d4-rR0mdHc7OlY_e5nh3XT4r4e?usp=sharing) | [数据](https://huggingface.co/collections/quentinll/lewm) | [网站](https://le-wm.github.io/) \]**
 
-If you find this code useful, please reference it in your paper:
-```
-@article{maes_lelidec2026lewm,
-  title={LeWorldModel: Stable End-to-End Joint-Embedding Predictive Architecture from Pixels},
-  author={Maes, Lucas and Le Lidec, Quentin and Scieur, Damien and LeCun, Yann and Balestriero, Randall},
-  journal={arXiv preprint},
-  year={2026}
-}
-```
 
-## Using the code
-This codebase builds on [stable-worldmodel](https://github.com/galilai-group/stable-worldmodel) for environment management, planning, and evaluation, and [stable-pretraining](https://github.com/galilai-group/stable-pretraining) for training. Together they reduce this repository to its core contribution: the model architecture and training objective.
+## 使用代码
 
-**Installation:**
+该代码库基于 [stable-worldmodel](https://github.com/galilai-group/stable-worldmodel) 进行环境管理、规划和评估，并[基于 stable-pretraining](https://github.com/galilai-group/stable-pretraining) 进行训练。它们共同将该代码库的核心贡献简化为：模型架构和训练目标。
+
+**安装：**
+
 ```bash
 uv venv --python=3.10
 source .venv/bin/activate
 uv pip install stable-worldmodel[train,env]
 ```
 
-## Data
+## 数据
 
-Datasets use the HDF5 format for fast loading. Download the data from [HuggingFace](https://huggingface.co/collections/quentinll/lewm) and decompress with:
+数据集采用 HDF5 格式以实现快速加载。从 [HuggingFace](https://huggingface.co/collections/quentinll/lewm) 下载数据并使用以下命令解压缩：
 
 ```bash
 tar --zstd -xvf archive.tar.zst
 ```
 
-Place the extracted `.h5` files under `$STABLEWM_HOME` (defaults to `~/.stable-wm/`). You can override this path:
+将提取的 `.h5` 文件放置在 `$STABLEWM_HOME` 目录下（默认为 `~/.stable-wm/` ）。您可以覆盖此路径：
+
 ```bash
 export STABLEWM_HOME=/path/to/your/storage
 ```
 
-Dataset names are specified without the `.h5` extension. For example, `config/train/data/pusht.yaml` references `pusht_expert_train`, which resolves to `$STABLEWM_HOME/pusht_expert_train.h5`.
+数据集名称指定时不带 `.h5` 扩展名。例如， `config/train/data/pusht.yaml` 引用了 `pusht_expert_train` ，它解析为 `$STABLEWM_HOME/pusht_expert_train.h5` 。
 
-## Training
+## 训练
 
-`jepa.py` contains the PyTorch implementation of LeWM. Training is configured via [Hydra](https://hydra.cc/) config files under `config/train/`.
+`jepa.py` 包含 LeWM 的 PyTorch 实现。训练通过 `config/train/` 下的 Hydra 配置文件进行配置。
 
-Before training, set your WandB `entity` and `project` in `config/train/lewm.yaml`:
+训练前，请在 `config/train/lewm.yaml` 中设置 WandB `entity` 和 `project` ：
+
 ```yaml
 wandb:
   config:
@@ -63,18 +52,19 @@ wandb:
     project: your_project
 ```
 
-To launch training:
+启动培训：
+
 ```bash
 python train.py data=pusht
 ```
 
-Checkpoints are saved to `$STABLEWM_HOME` upon completion.
+检查点完成后会保存到 `$STABLEWM_HOME` 目录。
 
-For baseline scripts, see the stable-worldmodel [scripts](https://github.com/galilai-group/stable-worldmodel/tree/main/scripts/train) folder.
+有关基线脚本，请参阅 stable-worldmodel [脚本](https://github.com/galilai-group/stable-worldmodel/tree/main/scripts/train)文件夹。
 
-## Planning
+## 规划
 
-Evaluation configs live under `config/eval/`. Set the `policy` field to the checkpoint path **relative to `$STABLEWM_HOME`**, without the `_object.ckpt` suffix:
+评估配置位于 `config/eval/` 下。将 `policy` 字段设置为**相对于 `$STABLEWM_HOME`** 检查点路径，不带 `_object.ckpt` 后缀：
 
 ```bash
 # ✓ correct
@@ -84,14 +74,12 @@ python eval.py --config-name=pusht.yaml policy=pusht/lewm
 python eval.py --config-name=pusht.yaml policy=pusht/lewm_object.ckpt
 ```
 
-## Pretrained Checkpoints
+## 预训练检查点
 
-Pre-trained checkpoints are available on [Google Drive](https://drive.google.com/drive/folders/1r31os0d4-rR0mdHc7OlY_e5nh3XT4r4e). Download the checkpoint archive and place the extracted files under `$STABLEWM_HOME/`.
+预训练的检查点可在 [Google 云端硬盘](https://drive.google.com/drive/folders/1r31os0d4-rR0mdHc7OlY_e5nh3XT4r4e)上找到。下载检查点存档并将解压后的文件放在 `$STABLEWM_HOME/` 目录下。
 
-<div align="center">
-
-| Method | two-room | pusht | cube | reacher |
-|:---:|:---:|:---:|:---:|:---:|
+| 方法 | 两室 | 推 | 立方体 | 取物器 |
+| --- | --- | --- | --- | --- |
 | pldm | ✓ | ✓ | ✓ | ✓ |
 | lejepa | ✓ | ✓ | ✓ | ✓ |
 | ivl | ✓ | ✓ | ✓ | — |
@@ -100,15 +88,14 @@ Pre-trained checkpoints are available on [Google Drive](https://drive.google.com
 | dinowm | ✓ | ✓ | — | — |
 | dinowm_noprop | ✓ | ✓ | ✓ | ✓ |
 
-</div>
+## 加载检查点
 
-## Loading a checkpoint
+每个 tar 归档文件每个检查点包含两个文件：
 
-Each tar archive contains two files per checkpoint:
-- `<name>_object.ckpt` — a serialized Python object for convenient loading; this is what `eval.py` and the `stable_worldmodel` API use
-- `<name>_weight.ckpt` — a weights-only checkpoint (`state_dict`) for cases where you want to load weights into your own model instance
+*   `<name>_object.ckpt` — 一个序列化的 Python 对象，方便加载； `eval.py` 和 `stable_worldmodel` API 都使用这个对象。
+*   `<name>_weight.ckpt` — 仅包含权重的检查点（ `state_dict` ），用于将权重加载到您自己的模型实例中的情况。
 
-To load the object checkpoint via the `stable_worldmodel` API:
+要通过 `stable_worldmodel` API 加载对象检查点：
 
 ```python
 import stable_worldmodel as swm
@@ -117,11 +104,13 @@ import stable_worldmodel as swm
 cost = swm.policy.AutoCostModel('pusht/lewm')
 ```
 
-This function accepts:
-- `run_name` — checkpoint path **relative to `$STABLEWM_HOME`**, without the `_object.ckpt` suffix
-- `cache_dir` — optional override for the checkpoint root (defaults to `$STABLEWM_HOME`)
+此函数接受以下参数：
 
-The returned module is in `eval` mode with its PyTorch weights accessible via `.state_dict()`.
+*   `run_name` — **相对于 `$STABLEWM_HOME`** 检查点路径，不包含 `_object.ckpt` 后缀
+*   `cache_dir` — 检查点根目录的可选覆盖设置（默认为 `$STABLEWM_HOME` ）
 
-## Contact & Contributions
-Feel free to open [issues](https://github.com/lucas-maes/le-wm/issues)! For questions or collaborations, please contact `lucas.maes@mila.quebec`
+返回的模块处于 `eval` 模式，其 PyTorch 权重可通过 `.state_dict()` 访问。
+
+## 联系方式及投稿
+
+欢迎提交[问题](https://github.com/lucas-maes/le-wm/issues) ！如有任何疑问或合作意向，请联系 `lucas.maes@mila.quebec`

@@ -1,17 +1,31 @@
+"""LeWM 辅助模块：SIGReg 反坍塌正则、带 AdaLN 的预测器骨干、动作嵌入与 MLP。
+
+论文对应 paper/sections/3-method.tex：
+- SIGReg：Sec.3「Training Objective」，式 SIGReg(Z) 与 Epps–Pulley 一元检验；随机投影数 num_proj、结点 knots。
+- Predictor：Sec.3「Model Architecture」，Transformer + AdaLN（Peebles & Xie 2023），动作条件由 Embedder 产生后注入各层。
+"""
+
 import torch
 from torch import nn
 import torch.nn.functional as F
 from einops import rearrange
 
+
 def modulate(x, shift, scale):
-    """AdaLN-zero modulation"""
+    """AdaLN-zero：对 LayerNorm 后的特征做仿射调制（论文 Predictor 中 AdaLN 的调制支路）。"""
     return x * (1 + scale) + shift
 
+
 class SIGReg(torch.nn.Module):
-    """Sketch Isotropic Gaussian Regularizer (single-GPU!)"""
+    """Sketched Isotropic Gaussian Regularizer（论文 Sec.3 第二项损失）。
+
+    将潜变量投影到随机单位方向，在一维上优化 Epps–Pulley 统计量，使嵌入接近各向同性高斯以抑制坍塌；
+    与 train.py 中 L_LeWM = L_pred + λ·SIGReg 对应。
+    """
 
     def __init__(self, knots=17, num_proj=1024):
         super().__init__()
+        # 论文：M = num_proj 条随机投影；φ(t) 与权重来自 Epps–Pulley 在 [0,3] 上的离散化
         self.num_proj = num_proj
         t = torch.linspace(0, 3, knots, dtype=torch.float32)
         dt = 3 / (knots - 1)
@@ -26,17 +40,17 @@ class SIGReg(torch.nn.Module):
         """
         proj: (T, B, D)
         """
-        # sample random projections
+        # 论文：随机单位向量 u^(m)，h^(m) = Z u^(m)
         A = torch.randn(proj.size(-1), self.num_proj, device=proj.device)
         A = A.div_(A.norm(p=2, dim=0))
-        # compute the epps-pulley statistic
+        # Epps–Pulley 统计量 T(h^(m)) 在结点 t 上的实现
         x_t = (proj @ A).unsqueeze(-1) * self.t
         err = (x_t.cos().mean(-3) - self.phi).square() + x_t.sin().mean(-3).square()
         statistic = (err @ self.weights) * proj.size(-2)
-        return statistic.mean() # average over projections and time
-    
+        return statistic.mean()  # 对投影维取平均，对应论文 SIGReg(Z) 中 1/M Σ_m T(h^(m))
+
 class FeedForward(nn.Module):
-    """FeedForward network used in Transformers"""
+    """Transformer 前馈子层（预测器每个 ConditionalBlock 内的 MLP 支路）。"""
 
     def __init__(self, dim, hidden_dim, dropout=0.0):
         super().__init__()
@@ -54,7 +68,7 @@ class FeedForward(nn.Module):
 
 
 class Attention(nn.Module):
-    """Scaled dot-product attention with causal masking"""
+    """缩放点积注意力；is_causal=True 时对应论文「temporal causal masking」，避免看见未来帧嵌入。"""
 
     def __init__(self, dim, heads=8, dim_head=64, dropout=0.0):
         super().__init__()
@@ -86,7 +100,7 @@ class Attention(nn.Module):
 
 
 class ConditionalBlock(nn.Module):
-    """Transformer block with AdaLN-zero conditioning"""
+    """带 AdaLN-zero 条件的 Transformer 块（论文：动作通过 Adaptive Layer Normalization 注入预测器各层）。"""
 
     def __init__(self, dim, heads, dim_head, mlp_dim, dropout=0.0):
         super().__init__()
@@ -95,6 +109,7 @@ class ConditionalBlock(nn.Module):
         self.mlp = FeedForward(dim, mlp_dim, dropout=dropout)
         self.norm1 = nn.LayerNorm(dim, elementwise_affine=False, eps=1e-6)
         self.norm2 = nn.LayerNorm(dim, elementwise_affine=False, eps=1e-6)
+        # 论文：由动作嵌入 c 生成每层 shift/scale/gate；AdaLN 权重初值为 0，使训练初期逐步引入动作条件
         self.adaLN_modulation = nn.Sequential(
             nn.SiLU(), nn.Linear(dim, 6 * dim, bias=True)
         )
@@ -103,6 +118,7 @@ class ConditionalBlock(nn.Module):
         nn.init.constant_(self.adaLN_modulation[-1].bias, 0)
 
     def forward(self, x, c):
+        # c 为动作嵌入时间序列，与 x 逐时刻对齐后生成 AdaLN 的 6 组参数（MSA 与 MLP 各 shift/scale/gate）
         shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = (
             self.adaLN_modulation(c).chunk(6, dim=-1)
         )
@@ -112,7 +128,7 @@ class ConditionalBlock(nn.Module):
 
 
 class Block(nn.Module):
-    """Standard Transformer block"""
+    """标准 Transformer 块（本文件中预测器使用 ConditionalBlock，Block 供通用 Transformer 复用）。"""
 
     def __init__(self, dim, heads, dim_head, mlp_dim, dropout=0.0):
         super().__init__()
@@ -129,7 +145,7 @@ class Block(nn.Module):
 
 
 class Transformer(nn.Module):
-    """Standard Transformer with support for AdaLN-zero blocks"""
+    """预测器骨干：输入为历史帧潜嵌入 x，条件 c 为同长度的动作嵌入（经 cond_proj 对齐隐藏维）。"""
 
     def __init__(
         self,
@@ -187,6 +203,11 @@ class Transformer(nn.Module):
         return x
 
 class Embedder(nn.Module):
+    """动作编码器：将原始动作序列映射为与潜嵌入维一致的条件向量，供 ARPredictor 中 AdaLN 使用。
+
+    论文 Sec.3：动作经编码后以 AdaLN 注入预测器（此处为 1×1 Conv1d + MLP，等价于对动作维做逐层混合再嵌入）。
+    """
+
     def __init__(
         self,
         input_dim=10,
@@ -215,7 +236,7 @@ class Embedder(nn.Module):
 
 
 class MLP(nn.Module):
-    """Simple MLP with optional normalization and activation"""
+    """单层/两层 MLP，用作编码器侧与预测器侧的 projector（论文：带 BatchNorm 的投影头）。"""
 
     def __init__(
         self,
@@ -242,7 +263,7 @@ class MLP(nn.Module):
 
 
 class ARPredictor(nn.Module):
-    """Autoregressive predictor for next-step embedding prediction."""
+    """自回归预测器：输入历史 N 帧的潜表示，在动作条件与因果注意力下预测下一帧嵌入（论文 Eq.~(LeWM) 中 pred）。"""
 
     def __init__(
         self,
@@ -259,6 +280,7 @@ class ARPredictor(nn.Module):
         emb_dropout=0.0,
     ):
         super().__init__()
+        # 论文：对长度为 N 的历史窗口使用可学习位置编码；N 即 wm.history_size
         self.pos_embedding = nn.Parameter(torch.randn(1, num_frames, input_dim))
         self.dropout = nn.Dropout(emb_dropout)
         self.transformer = Transformer(
@@ -276,8 +298,9 @@ class ARPredictor(nn.Module):
     def forward(self, x, c):
         """
         x: (B, T, d)
-        c: (B, T, act_dim)
+        c: (B, T, d)  action embeddings (same dim as x after Embedder)
         """
+        # x 为历史窗口内 z 的嵌入；c 为 Embedder(action) 得到的条件，送入各 ConditionalBlock
         T = x.size(1)
         x = x + self.pos_embedding[:, :T]
         x = self.dropout(x)
