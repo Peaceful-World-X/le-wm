@@ -14,6 +14,28 @@ from sklearn import preprocessing
 from torchvision.transforms import v2 as transforms
 import stable_worldmodel as swm
 
+
+def _assert_cost_model_checkpoint_exists(run_name: str, cache_dir: Path) -> None:
+    """Match ``stable_worldmodel.policy._load_model_with_attribute`` path rules."""
+    if Path(run_name).exists():
+        run_path = Path(run_name)
+    else:
+        run_path = cache_dir / str(run_name)
+    if run_path.is_dir():
+        if not list(run_path.glob("*_object.ckpt")):
+            raise FileNotFoundError(
+                f"AutoCostModel: no '*_object.ckpt' in {run_path}. "
+                "HuggingFace model repos often ship 'weights.pt' only; that format is not "
+                "loaded here. Add a LeWM-style '*_object.ckpt' (README / Google Drive) or "
+                "train with train.py and save the serialized world model (ModelObjectCallBack)."
+            )
+    elif not Path(f"{run_path}_object.ckpt").exists():
+        raise FileNotFoundError(
+            f"AutoCostModel: expected directory {run_path} or file {run_path}_object.ckpt; "
+            "neither is valid."
+        )
+
+
 def img_transform(cfg):
     transform = transforms.Compose(
         [
@@ -85,7 +107,13 @@ def run(cfg: DictConfig):
     policy = cfg.get("policy", "random")
 
     if policy != "random":
-        model = swm.policy.AutoCostModel(cfg.policy)
+        # stable_worldmodel defaults to get_cache_dir(sub_folder="checkpoints");
+        # LeWM README and eval data use STABLEWM_HOME / <run_name> (no "checkpoints" level).
+        ckpt_cache = Path(swm.data.utils.get_cache_dir())
+        _assert_cost_model_checkpoint_exists(str(cfg.policy), ckpt_cache)
+        model = swm.policy.AutoCostModel(
+            str(cfg.policy), cache_dir=ckpt_cache
+        )
         model = model.to("cuda")
         model = model.eval()
         model.requires_grad_(False)
